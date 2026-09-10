@@ -143,8 +143,13 @@
             color: #ffffff;
         }
 
-        .btn-primary:hover {
+        .btn-primary:hover:not(:disabled) {
             background-color: #333333;
+        }
+
+        .btn-primary:disabled {
+            background-color: #999999;
+            cursor: not-allowed;
         }
 
         .btn-secondary {
@@ -155,6 +160,27 @@
 
         .btn-secondary:hover {
             background-color: #e5e5e5;
+        }
+
+        .loading-bar {
+            width: 100%;
+            height: 4px;
+            background-color: #e5e5e5;
+            border-radius: 2px;
+            margin-top: 12px;
+            display: none;
+            overflow: hidden;
+        }
+
+        .loading-bar.active {
+            display: block;
+        }
+
+        .loading-bar-fill {
+            height: 100%;
+            background-color: #1a1a1a;
+            width: 0%;
+            transition: width 0.3s;
         }
 
         .products-list {
@@ -520,8 +546,12 @@
                 </div>
             </div>
 
+            <div class="loading-bar" id="loadingBar">
+                <div class="loading-bar-fill" id="loadingBarFill"></div>
+            </div>
+
             <div class="button-group">
-                <button class="btn btn-primary" onclick="uploadProduct()">상품 업로드</button>
+                <button class="btn btn-primary" id="uploadBtn" onclick="uploadProduct()">상품 업로드</button>
                 <button class="btn btn-secondary" onclick="logout()">로그아웃</button>
             </div>
         </div>
@@ -576,16 +606,69 @@
     <script>
         const ADMIN_KEY = 'harinkey';
         const HOURS_DURATION = 10;
+        let db;
 
-        // Local Storage에서 상품 가져오기
-        function getProducts() {
-            const stored = localStorage.getItem('harinshop_products');
-            return stored ? JSON.parse(stored) : {};
+        // IndexedDB 초기화
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('HarinShopDB', 1);
+
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => {
+                    db = request.result;
+                    resolve(db);
+                };
+
+                request.onupgradeneeded = (e) => {
+                    db = e.target.result;
+                    if (!db.objectStoreNames.contains('products')) {
+                        db.createObjectStore('products', { keyPath: 'id' });
+                    }
+                };
+            });
         }
 
-        // Local Storage에 상품 저장
-        function saveProducts(products) {
-            localStorage.setItem('harinshop_products', JSON.stringify(products));
+        // IndexedDB에서 상품 가져오기
+        function getProducts() {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(['products'], 'readonly');
+                const store = transaction.objectStore('products');
+                const request = store.getAll();
+
+                request.onsuccess = () => {
+                    const products = {};
+                    request.result.forEach(product => {
+                        products[product.id] = product;
+                    });
+                    resolve(products);
+                };
+
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        // IndexedDB에 상품 저장
+        function saveProduct(linkId, productData) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(['products'], 'readwrite');
+                const store = transaction.objectStore('products');
+                const request = store.put({ id: linkId, ...productData });
+
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        // IndexedDB에서 상품 삭제
+        function deleteProduct(linkId) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(['products'], 'readwrite');
+                const store = transaction.objectStore('products');
+                const request = store.delete(linkId);
+
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+            });
         }
 
         // 로그인
@@ -610,12 +693,13 @@
             const file = document.getElementById('fileInput').files[0];
             const fileNameSpan = document.getElementById('fileName');
             if (file) {
-                fileNameSpan.textContent = `선택된 파일: ${file.name}`;
+                const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+                fileNameSpan.textContent = `선택된 파일: ${file.name} (${sizeMB}MB)`;
             }
         }
 
         // 상품 업로드
-        function uploadProduct() {
+        async function uploadProduct() {
             const name = document.getElementById('productName').value.trim();
             const description = document.getElementById('productDescription').value.trim();
             const file = document.getElementById('fileInput').files[0];
@@ -625,27 +709,66 @@
                 return;
             }
 
-            const reader = new FileReader();
-            reader.onload = function (e) {
-                const products = getProducts();
+            const uploadBtn = document.getElementById('uploadBtn');
+            const loadingBar = document.getElementById('loadingBar');
+            const loadingBarFill = document.getElementById('loadingBarFill');
+
+            uploadBtn.disabled = true;
+            loadingBar.classList.add('active');
+
+            try {
+                const fileData = await readFileAsArrayBuffer(file);
                 const linkId = generateLinkId();
                 const expirationTime = new Date().getTime() + HOURS_DURATION * 60 * 60 * 1000;
 
-                products[linkId] = {
+                await saveProduct(linkId, {
                     name: name,
                     description: description,
-                    file: e.target.result,
+                    file: fileData,
                     fileName: file.name,
                     createdAt: new Date().getTime(),
                     expirationTime: expirationTime
+                });
+
+                clearUploadForm();
+                await loadProductsList();
+                loadingBar.classList.remove('active');
+                uploadBtn.disabled = false;
+                loadingBarFill.style.width = '0%';
+
+                const downloadLink = `${window.location.href.split('?')[0]}?download=${linkId}`;
+                alert(`✅ 상품이 업로드되었습니다!\n\n다운로드 링크:\n${downloadLink}`);
+            } catch (error) {
+                console.error('Upload error:', error);
+                alert('업로드 중 오류가 발생했습니다.');
+                uploadBtn.disabled = false;
+                loadingBar.classList.remove('active');
+            }
+        }
+
+        // 파일을 ArrayBuffer로 읽기
+        function readFileAsArrayBuffer(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                let lastUpdate = 0;
+
+                reader.onprogress = (e) => {
+                    const now = Date.now();
+                    if (now - lastUpdate > 100) {
+                        const progress = (e.loaded / e.total) * 100;
+                        document.getElementById('loadingBarFill').style.width = progress + '%';
+                        lastUpdate = now;
+                    }
                 };
 
-                saveProducts(products);
-                clearUploadForm();
-                loadProductsList();
-                alert(`상품이 업로드되었습니다!\n\n다운로드 링크:\n${window.location.href}?download=${linkId}`);
-            };
-            reader.readAsDataURL(file);
+                reader.onload = () => {
+                    document.getElementById('loadingBarFill').style.width = '100%';
+                    resolve(reader.result);
+                };
+
+                reader.onerror = () => reject(reader.error);
+                reader.readAsArrayBuffer(file);
+            });
         }
 
         // 랜덤 링크 ID 생성
@@ -662,8 +785,8 @@
         }
 
         // 상품 목록 로드
-        function loadProductsList() {
-            const products = getProducts();
+        async function loadProductsList() {
+            const products = await getProducts();
             const listDiv = document.getElementById('productsList');
 
             if (Object.keys(products).length === 0) {
@@ -686,7 +809,7 @@
                         </div>
                         <div class="product-actions">
                             <button class="btn-small btn-copy" onclick="copyToClipboard('${link}')">링크 복사</button>
-                            <button class="btn-small btn-delete" onclick="deleteProduct('${linkId}')">삭제</button>
+                            <button class="btn-small btn-delete" onclick="deleteProductClick('${linkId}')">삭제</button>
                         </div>
                     </div>
                 `;
@@ -701,27 +824,28 @@
         }
 
         // 상품 삭제
-        function deleteProduct(linkId) {
+        async function deleteProductClick(linkId) {
             if (confirm('이 상품을 삭제하시겠습니까?')) {
-                const products = getProducts();
-                delete products[linkId];
-                saveProducts(products);
-                loadProductsList();
+                await deleteProduct(linkId);
+                await loadProductsList();
             }
         }
 
         // 다운로드 파일
-        function downloadFile() {
+        async function downloadFile() {
             const params = new URLSearchParams(window.location.search);
             const linkId = params.get('download');
-            const products = getProducts();
+            const products = await getProducts();
             const product = products[linkId];
 
             if (product) {
+                const blob = new Blob([product.file]);
+                const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
-                link.href = product.file;
+                link.href = url;
                 link.download = product.fileName;
                 link.click();
+                URL.revokeObjectURL(url);
             }
         }
 
@@ -768,12 +892,14 @@
         }
 
         // 초기 페이지 로드
-        function initPage() {
+        async function initPage() {
+            await initDB();
+
             const params = new URLSearchParams(window.location.search);
             const downloadId = params.get('download');
 
             if (downloadId) {
-                const products = getProducts();
+                const products = await getProducts();
                 const product = products[downloadId];
 
                 if (!product) {
