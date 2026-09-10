@@ -603,76 +603,29 @@
         </div>
     </div>
 
-    <script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+        import { getStorage, ref, uploadBytes, getBytes } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-storage.js";
+        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, where } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAnZyuoXd1bDbsTJ98gtrK27hMV3qa5NDc",
+            authDomain: "filehost-7f242.firebaseapp.com",
+            projectId: "filehost-7f242",
+            storageBucket: "filehost-7f242.firebasestorage.app",
+            messagingSenderId: "438656582654",
+            appId: "1:438656582654:web:4b528f2ba7877548f536af",
+            measurementId: "G-870E2SFWGK"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const storage = getStorage(app);
+        const db = getFirestore(app);
+
         const ADMIN_KEY = 'harinkey';
         const HOURS_DURATION = 10;
-        let db;
 
-        // IndexedDB 초기화
-        function initDB() {
-            return new Promise((resolve, reject) => {
-                const request = indexedDB.open('HarinShopDB', 1);
-
-                request.onerror = () => reject(request.error);
-                request.onsuccess = () => {
-                    db = request.result;
-                    resolve(db);
-                };
-
-                request.onupgradeneeded = (e) => {
-                    db = e.target.result;
-                    if (!db.objectStoreNames.contains('products')) {
-                        db.createObjectStore('products', { keyPath: 'id' });
-                    }
-                };
-            });
-        }
-
-        // IndexedDB에서 상품 가져오기
-        function getProducts() {
-            return new Promise((resolve, reject) => {
-                const transaction = db.transaction(['products'], 'readonly');
-                const store = transaction.objectStore('products');
-                const request = store.getAll();
-
-                request.onsuccess = () => {
-                    const products = {};
-                    request.result.forEach(product => {
-                        products[product.id] = product;
-                    });
-                    resolve(products);
-                };
-
-                request.onerror = () => reject(request.error);
-            });
-        }
-
-        // IndexedDB에 상품 저장
-        function saveProduct(linkId, productData) {
-            return new Promise((resolve, reject) => {
-                const transaction = db.transaction(['products'], 'readwrite');
-                const store = transaction.objectStore('products');
-                const request = store.put({ id: linkId, ...productData });
-
-                request.onsuccess = () => resolve();
-                request.onerror = () => reject(request.error);
-            });
-        }
-
-        // IndexedDB에서 상품 삭제
-        function deleteProduct(linkId) {
-            return new Promise((resolve, reject) => {
-                const transaction = db.transaction(['products'], 'readwrite');
-                const store = transaction.objectStore('products');
-                const request = store.delete(linkId);
-
-                request.onsuccess = () => resolve();
-                request.onerror = () => reject(request.error);
-            });
-        }
-
-        // 로그인
-        function login() {
+        window.login = function() {
             const key = document.getElementById('keyInput').value;
             if (key === ADMIN_KEY) {
                 sessionStorage.setItem('admin_logged_in', 'true');
@@ -680,26 +633,23 @@
             } else {
                 alert('잘못된 KEY입니다.');
             }
-        }
+        };
 
-        // 로그아웃
-        function logout() {
+        window.logout = function() {
             sessionStorage.removeItem('admin_logged_in');
             showLoginPage();
-        }
+        };
 
-        // 파일명 업데이트
-        function updateFileName() {
+        window.updateFileName = function() {
             const file = document.getElementById('fileInput').files[0];
             const fileNameSpan = document.getElementById('fileName');
             if (file) {
                 const sizeMB = (file.size / 1024 / 1024).toFixed(2);
                 fileNameSpan.textContent = `선택된 파일: ${file.name} (${sizeMB}MB)`;
             }
-        }
+        };
 
-        // 상품 업로드
-        async function uploadProduct() {
+        window.uploadProduct = async function() {
             const name = document.getElementById('productName').value.trim();
             const description = document.getElementById('productDescription').value.trim();
             const file = document.getElementById('fileInput').files[0];
@@ -715,17 +665,23 @@
 
             uploadBtn.disabled = true;
             loadingBar.classList.add('active');
+            loadingBarFill.style.width = '0%';
 
             try {
-                const fileData = await readFileAsArrayBuffer(file);
                 const linkId = generateLinkId();
                 const expirationTime = new Date().getTime() + HOURS_DURATION * 60 * 60 * 1000;
 
-                await saveProduct(linkId, {
+                // Firebase Storage에 파일 업로드
+                const storageRef = ref(storage, `products/${linkId}/${file.name}`);
+                await uploadBytes(storageRef, file);
+
+                // Firestore에 메타데이터 저장
+                await addDoc(collection(db, "products"), {
+                    id: linkId,
                     name: name,
                     description: description,
-                    file: fileData,
                     fileName: file.name,
+                    storagePath: `products/${linkId}/${file.name}`,
                     createdAt: new Date().getTime(),
                     expirationTime: expirationTime
                 });
@@ -744,39 +700,12 @@
                 uploadBtn.disabled = false;
                 loadingBar.classList.remove('active');
             }
-        }
+        };
 
-        // 파일을 ArrayBuffer로 읽기
-        function readFileAsArrayBuffer(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                let lastUpdate = 0;
-
-                reader.onprogress = (e) => {
-                    const now = Date.now();
-                    if (now - lastUpdate > 100) {
-                        const progress = (e.loaded / e.total) * 100;
-                        document.getElementById('loadingBarFill').style.width = progress + '%';
-                        lastUpdate = now;
-                    }
-                };
-
-                reader.onload = () => {
-                    document.getElementById('loadingBarFill').style.width = '100%';
-                    resolve(reader.result);
-                };
-
-                reader.onerror = () => reject(reader.error);
-                reader.readAsArrayBuffer(file);
-            });
-        }
-
-        // 랜덤 링크 ID 생성
         function generateLinkId() {
             return 'link_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
         }
 
-        // 업로드 폼 초기화
         function clearUploadForm() {
             document.getElementById('productName').value = '';
             document.getElementById('productDescription').value = '';
@@ -784,19 +713,23 @@
             document.getElementById('fileName').textContent = '';
         }
 
-        // 상품 목록 로드
         async function loadProductsList() {
-            const products = await getProducts();
+            const products = [];
+            const querySnapshot = await getDocs(collection(db, "products"));
+            querySnapshot.forEach((doc) => {
+                products.push({ docId: doc.id, ...doc.data() });
+            });
+
             const listDiv = document.getElementById('productsList');
 
-            if (Object.keys(products).length === 0) {
+            if (products.length === 0) {
                 listDiv.innerHTML = '<p style="color: #999; font-size: 14px;">아직 업로드된 상품이 없습니다.</p>';
                 return;
             }
 
-            listDiv.innerHTML = Object.entries(products).map(([linkId, product]) => {
+            listDiv.innerHTML = products.map(product => {
                 const expirationDate = new Date(product.expirationTime).toLocaleString('ko-KR');
-                const link = `${window.location.href.split('?')[0]}?download=${linkId}`;
+                const link = `${window.location.href.split('?')[0]}?download=${product.id}`;
                 return `
                     <div class="product-item">
                         <div class="product-info">
@@ -809,54 +742,66 @@
                         </div>
                         <div class="product-actions">
                             <button class="btn-small btn-copy" onclick="copyToClipboard('${link}')">링크 복사</button>
-                            <button class="btn-small btn-delete" onclick="deleteProductClick('${linkId}')">삭제</button>
+                            <button class="btn-small btn-delete" onclick="deleteProductClick('${product.docId}')">삭제</button>
                         </div>
                     </div>
                 `;
             }).join('');
         }
 
-        // 링크 복사
-        function copyToClipboard(text) {
+        window.copyToClipboard = function(text) {
             navigator.clipboard.writeText(text).then(() => {
                 alert('링크가 복사되었습니다!');
             });
-        }
+        };
 
-        // 상품 삭제
-        async function deleteProductClick(linkId) {
+        window.deleteProductClick = async function(docId) {
             if (confirm('이 상품을 삭제하시겠습니까?')) {
-                await deleteProduct(linkId);
-                await loadProductsList();
+                try {
+                    await deleteDoc(doc(db, "products", docId));
+                    await loadProductsList();
+                } catch (error) {
+                    console.error('Delete error:', error);
+                    alert('삭제 중 오류가 발생했습니다.');
+                }
             }
-        }
+        };
 
-        // 다운로드 파일
-        async function downloadFile() {
+        window.downloadFile = async function() {
             const params = new URLSearchParams(window.location.search);
             const linkId = params.get('download');
-            const products = await getProducts();
-            const product = products[linkId];
 
-            if (product) {
-                const blob = new Blob([product.file]);
-                const url = URL.createObjectURL(blob);
+            try {
+                const q = query(collection(db, "products"), where("id", "==", linkId));
+                const querySnapshot = await getDocs(q);
+
+                if (querySnapshot.empty) {
+                    showErrorPage('요청한 상품을 찾을 수 없습니다.');
+                    return;
+                }
+
+                const product = querySnapshot.docs[0].data();
+                const fileRef = ref(storage, product.storagePath);
+                const fileBlob = await getBytes(fileRef);
+
+                const url = URL.createObjectURL(new Blob([fileBlob]));
                 const link = document.createElement('a');
                 link.href = url;
                 link.download = product.fileName;
                 link.click();
                 URL.revokeObjectURL(url);
+            } catch (error) {
+                console.error('Download error:', error);
+                alert('다운로드 중 오류가 발생했습니다.');
             }
-        }
+        };
 
-        // HTML 특수문자 이스케이프
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
 
-        // 페이지 표시
         function showLoginPage() {
             document.getElementById('loginPage').style.display = 'flex';
             document.getElementById('adminPage').classList.remove('active');
@@ -887,47 +832,49 @@
             document.getElementById('errorPage').classList.add('active');
         }
 
-        function goHome() {
+        window.goHome = function() {
             window.location.href = window.location.href.split('?')[0];
-        }
+        };
 
-        // 초기 페이지 로드
         async function initPage() {
-            await initDB();
-
             const params = new URLSearchParams(window.location.search);
             const downloadId = params.get('download');
 
             if (downloadId) {
-                const products = await getProducts();
-                const product = products[downloadId];
+                try {
+                    const q = query(collection(db, "products"), where("id", "==", downloadId));
+                    const querySnapshot = await getDocs(q);
 
-                if (!product) {
-                    showErrorPage('요청한 상품을 찾을 수 없습니다.');
-                    return;
-                }
+                    if (querySnapshot.empty) {
+                        showErrorPage('요청한 상품을 찾을 수 없습니다.');
+                        return;
+                    }
 
-                // 링크 만료 확인
-                if (new Date().getTime() > product.expirationTime) {
+                    const product = querySnapshot.docs[0].data();
+
+                    // 링크 만료 확인
+                    if (new Date().getTime() > product.expirationTime) {
+                        showDownloadPage();
+                        document.getElementById('toolInfo').style.display = 'none';
+                        document.getElementById('expiredMessage').style.display = 'block';
+                        return;
+                    }
+
+                    // 남은 시간 계산
+                    const remainingTime = product.expirationTime - new Date().getTime();
+                    const remainingHours = Math.floor(remainingTime / (60 * 60 * 1000));
+                    const remainingMinutes = Math.floor((remainingTime % (60 * 60 * 1000)) / (60 * 1000));
+
+                    document.getElementById('toolName').textContent = product.name;
+                    document.getElementById('expirationNotice').innerHTML = 
+                        `⏰ 남은 시간: <strong>${remainingHours}시간 ${remainingMinutes}분</strong>`;
+
+                    loadTerms();
                     showDownloadPage();
-                    document.getElementById('toolInfo').style.display = 'none';
-                    document.getElementById('expiredMessage').style.display = 'block';
-                    return;
+                } catch (error) {
+                    console.error('Init error:', error);
+                    showErrorPage('오류가 발생했습니다.');
                 }
-
-                // 남은 시간 계산
-                const remainingTime = product.expirationTime - new Date().getTime();
-                const remainingHours = Math.floor(remainingTime / (60 * 60 * 1000));
-                const remainingMinutes = Math.floor((remainingTime % (60 * 60 * 1000)) / (60 * 1000));
-
-                document.getElementById('toolName').textContent = product.name;
-                document.getElementById('expirationNotice').innerHTML = 
-                    `⏰ 남은 시간: <strong>${remainingHours}시간 ${remainingMinutes}분</strong>`;
-
-                // 이용약관 로드
-                loadTerms();
-
-                showDownloadPage();
             } else if (sessionStorage.getItem('admin_logged_in')) {
                 showAdminPage();
             } else {
@@ -935,7 +882,6 @@
             }
         }
 
-        // 이용약관 로드
         function loadTerms() {
             const termsText = `시행일자: 2026.08.30
 
@@ -956,15 +902,20 @@
             document.getElementById('termsContent').textContent = termsText;
         }
 
-        // 페이지 로드 시 초기화
         window.addEventListener('load', initPage);
 
-        // Enter 키 로그인
         document.addEventListener('keypress', function (e) {
             if (e.key === 'Enter' && document.getElementById('keyInput').style.display !== 'none') {
                 login();
             }
         });
+
+        // 전역 함수 노출
+        window.showLoginPage = showLoginPage;
+        window.showAdminPage = showAdminPage;
+        window.showDownloadPage = showDownloadPage;
+        window.showErrorPage = showErrorPage;
+        window.loadProductsList = loadProductsList;
     </script>
 </body>
 </html>
