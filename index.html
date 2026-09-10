@@ -1,86 +1,44 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>구매 완료</title>
+<!-- Download Page -->
+<div class="download-container" id="downloadPage">
+    <div class="download-card">
 
-    <style>
-        * {
-            box-sizing: border-box;
-        }
+        <div class="download-header">
+            <h1>✓ 구매 완료</h1>
+            <p>구매해주셔서 감사합니다!</p>
+        </div>
 
-        body {
-            margin: 0;
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            background: #0b0b0f;
-            color: white;
-            font-family: Arial, sans-serif;
-        }
+        <div id="toolInfo">
 
-        .box {
-            width: 90%;
-            max-width: 430px;
-            padding: 40px 30px;
-            background: #15151c;
-            border: 1px solid #292934;
-            border-radius: 18px;
-            text-align: center;
-        }
+            <div class="terms-section">
+                <div class="terms-title">운영정책</div>
 
-        .check {
-            font-size: 50px;
-            margin-bottom: 15px;
-        }
+                <div class="terms-content">
+                    <p>• 구매한 상품의 무단 배포 및 공유를 금지합니다.</p>
+                    <p>• 구매한 상품의 재판매를 금지합니다.</p>
+                    <p>• 상품 파일 및 소스코드를 무단으로 복제하여 판매하는 행위를 금지합니다.</p>
+                    <p>• 운영정책 위반이 확인될 경우 서비스 이용이 제한될 수 있습니다.</p>
+                </div>
+            </div>
 
-        h1 {
-            margin: 0 0 10px;
-        }
+            <button class="download-button" onclick="downloadFile()">
+                파일 다운로드
+            </button>
 
-        p {
-            color: #999;
-            margin-bottom: 30px;
-        }
+            <div class="thank-you">
+                Harin Shop을 이용해주셔서 감사합니다.<br>
+                좋은 상품과 서비스를 제공할 수 있도록 노력하겠습니다.
+            </div>
 
-        .download {
-            display: block;
-            width: 100%;
-            padding: 15px;
-            border-radius: 10px;
-            background: white;
-            color: black;
-            text-decoration: none;
-            font-weight: bold;
-            transition: 0.2s;
-        }
+        </div>
 
-        .download:hover {
-            transform: translateY(-2px);
-            opacity: 0.9;
-        }
-    </style>
-</head>
+        <div id="expiredMessage" style="display: none;">
+            <h2 style="color: #c62828; font-size: 20px; margin-bottom: 16px;">
+                다운로드할 수 없습니다
+            </h2>
+            <p style="color: #666666; font-size: 14px;">
+                판매자에게 문의해주세요.
+            </p>
+        </div>
 
-<body>
-
-<div class="box">
-    <div class="check">✓</div>
-
-    <h1>구매 완료</h1>
-
-    <p>상품 구매가 완료되었습니다.<br>
-       아래 버튼을 눌러 파일을 다운로드하세요.</p>
-
-    <!-- 여기에 실제 파일 경로 입력 -->
-    <a class="download"
-       href="files/my-product.zip"
-       download>
-        파일 다운로드
-    </a>
+    </div>
 </div>
-
-</body>
-</html>
